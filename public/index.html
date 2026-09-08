@@ -1,0 +1,104 @@
+<!DOCTYPE html>
+<html lang="ko">
+<head>
+<meta charset="UTF-8" />
+<meta name="viewport" content="width=device-width, initial-scale=1.0" />
+<title>실시간 상담원 상태 보드</title>
+<style>
+  body { font-family: -apple-system, sans-serif; max-width: 480px; margin: 50px auto; padding: 0 20px; color: #111; }
+  h1 { font-size: 20px; margin-bottom: 4px; }
+  .muted { color: #888; font-size: 13px; margin-bottom: 20px; }
+
+  #join-box input { padding: 10px 12px; border: 1px solid #ddd; border-radius: 8px; width: 60%; }
+  #join-box button { padding: 10px 16px; border: none; background: #111; color: white; border-radius: 8px; cursor: pointer; }
+
+  #status-box { display: none; margin-top: 20px; }
+  #status-box button { padding: 8px 14px; margin-right: 6px; border: 1px solid #ddd; border-radius: 8px; background: white; cursor: pointer; }
+  #status-box button.active { background: #0038FF; color: white; border-color: #0038FF; }
+
+  #agent-list { margin-top: 24px; border-top: 1px solid #eee; padding-top: 16px; }
+  .agent-row { display: flex; justify-content: space-between; align-items: center; padding: 8px 0; }
+  .badge { padding: 3px 10px; border-radius: 999px; font-size: 12px; font-weight: 600; }
+  .badge.대기중 { background: #E8F5E9; color: #2E7D32; }
+  .badge.상담중 { background: #FFF3E0; color: #E65100; }
+  .badge.자리비움 { background: #F5F5F5; color: #888; }
+</style>
+</head>
+<body>
+  <h1>🎧 실시간 상담원 상태 보드</h1>
+  <p class="muted">여러 브라우저 탭을 열어서 한쪽에서 상태를 바꿔보세요. WebSocket으로 실시간 반영됩니다.</p>
+
+  <div id="join-box">
+    <input type="text" id="name-input" placeholder="상담원 이름" />
+    <button id="join-btn">입장</button>
+  </div>
+
+  <div id="status-box">
+    <div class="muted">내 상태:</div>
+    <button data-status="대기중">대기중</button>
+    <button data-status="상담중">상담중</button>
+    <button data-status="자리비움">자리비움</button>
+  </div>
+
+  <div id="agent-list"></div>
+
+  <script>
+    const socket = new WebSocket(`ws://${location.host}`);
+    let myStatus = "대기중";
+
+    const joinBox = document.getElementById("join-box");
+    const statusBox = document.getElementById("status-box");
+    const nameInput = document.getElementById("name-input");
+    const agentListEl = document.getElementById("agent-list");
+
+    document.getElementById("join-btn").addEventListener("click", () => {
+      const name = nameInput.value.trim();
+      if (!name) return;
+
+      socket.send(JSON.stringify({ type: "join", name }));
+      joinBox.style.display = "none";
+      statusBox.style.display = "block";
+      updateActiveButton();
+    });
+
+    statusBox.querySelectorAll("button").forEach((btn) => {
+      btn.addEventListener("click", () => {
+        myStatus = btn.dataset.status;
+        socket.send(JSON.stringify({ type: "status", status: myStatus }));
+        updateActiveButton();
+      });
+    });
+
+    function updateActiveButton() {
+      statusBox.querySelectorAll("button").forEach((btn) => {
+        btn.classList.toggle("active", btn.dataset.status === myStatus);
+      });
+    }
+
+    // 서버가 상담원 목록을 보낼 때마다(누군가 입장/퇴장/상태변경) 화면을 다시 그림
+    socket.addEventListener("message", (event) => {
+      const msg = JSON.parse(event.data);
+      if (msg.type === "agent_list") {
+        renderAgentList(msg.agents);
+      }
+    });
+
+    function renderAgentList(agents) {
+      if (agents.length === 0) {
+        agentListEl.innerHTML = '<div class="muted">아직 접속한 상담원이 없어요.</div>';
+        return;
+      }
+      agentListEl.innerHTML = agents
+        .map(
+          (a) => `
+        <div class="agent-row">
+          <span>${a.name}</span>
+          <span class="badge ${a.status}">${a.status}</span>
+        </div>
+      `
+        )
+        .join("");
+    }
+  </script>
+</body>
+</html>
